@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from solver.quantum_solver.qaoa_solver.qaoa_mixers import add_ising_mixer_ham
 from solver.quantum_solver.qaoa_solver.qaoa_mixers import add_ising_problem_ham
-from solver.classical_solver.ising_problem import IsingProblem
+from problem.ising_problem import IsingProblem
 from qiskit import QuantumCircuit
 
 def test_add_ising_mixer_ham():
@@ -52,7 +52,7 @@ def test_add_ising_problem_ham():
     assert op_counts['rz'] == 6, "Erreur sur le nombre de portes RZ"
     assert op_counts['cx'] == 6, "Erreur sur le nombre de portes CNOT"
     
-    print("\n✅ Test réussi ! Ton analyseur SymPy marche parfaitement avec Qiskit.")
+    print("\n Test réussi !")
 
 
 if __name__ == "__main__":
