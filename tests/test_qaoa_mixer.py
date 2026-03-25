@@ -1,3 +1,9 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+
 from solver.quantum_solver.qaoa_solver.qaoa_mixers import add_ising_mixer_ham
 from solver.quantum_solver.qaoa_solver.qaoa_mixers import add_ising_problem_ham
 from solver.classical_solver.ising_problem import IsingProblem

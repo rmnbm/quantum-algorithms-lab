@@ -64,3 +64,6 @@ class BranchAndBound:
                 selection_finale[self.objets_tries[i]['index']] = 1
                 
         return selection_finale, self.meilleure_valeur
+    
+    def solve(self, capacity):
+        return self.resoudre(capacity)
