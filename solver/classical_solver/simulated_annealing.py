@@ -13,6 +13,14 @@ import random
 import math
 import time
 import scipy.sparse as sp
+import os
+import sys
+
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+if root_path not in sys.path:
+    sys.path.insert(0, root_path)
+
 from problem.qubo_problem import QuboProblem
 
 class SimulatedAnnealing:
@@ -123,19 +131,26 @@ class SimulatedAnnealing:
 
 
     def _calculate_delta_e(self, qubo_matrix, current_x, flip_index):
+        
         x_k = current_x[flip_index]
-        n = qubo_matrix.shape[0]
+        
 
         delta = qubo_matrix[flip_index, flip_index]
-
-        for j in range(n): 
-            if j != flip_index and current_x[j] == 1 :
-                delta += qubo_matrix[flip_index, j] + qubo_matrix[j, flip_index]
-
-        multiplier = 1 if x_k == 0 else -1
-
-        return multiplier * delta
-    
+        
+        row = qubo_matrix.getrow(flip_index)
+        indices = row.indices
+        data = row.data
+        for idx, val in zip(indices, data):
+            if idx != flip_index and current_x[idx] == 1:
+                delta += val
+                
+        col = qubo_matrix.getcol(flip_index)
+        indices = col.indices
+        data = col.data
+        for idx, val in zip(indices, data):
+            if idx != flip_index and current_x[idx] == 1:
+                delta += val
+        return (1 - 2 * x_k) * delta
 
 
 if __name__ == "__main__":
@@ -148,7 +163,7 @@ if __name__ == "__main__":
 
     sa = SimulatedAnnealing()
 
-    print("\nRunning the slow method (solve_matrix_product)...")
+    print("\nRunning the slow method (solve_matrix_product)")
 
     start_time_old = time.time()
     best_sol_old, best_cost_old = sa.solve_matrix_product(qubo)
@@ -157,7 +172,7 @@ if __name__ == "__main__":
     print(f"The old program finished in {old_duration} seconds. The cost needed is {best_cost_old}")
 
 
-    print("\nRunning the fast method...")
+    print("\nRunning the fast method")
     start_time_fast = time.time()
     best_sol_fast, best_cost_fast = sa.solve_efficient(qubo)
     end_time_fast = time.time()
