@@ -5,6 +5,11 @@ import matplotlib.pyplot as plt
 
 class DwaveSimulator:
     def __init__(self):
+
+        self.annealing_schedule = {
+            'A': np.linspace(1.0, 0.0, 101),
+            'B': np.linspace(0.0, 1.0, 101)
+        }
         
         # TODO1
         self.A = np.linspace(1.0, 0.0, 101)
