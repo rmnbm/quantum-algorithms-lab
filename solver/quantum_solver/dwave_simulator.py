@@ -10,7 +10,7 @@ class DwaveSimulator:
         self.A = np.linspace(1.0, 0.0, 101)
         self.B = np.linspace(0.0, 1.0, 101)
 
-        # Matrices de Pauli de base
+        # Pauli Matrix
         self.sigma_z = np.array([[1, 0], [0, -1]])
         self.sigma_x = np.array([[0, 1], [1, 0]])
         self.identity = np.eye(2)
@@ -19,10 +19,10 @@ class DwaveSimulator:
         
         base_op = self.sigma_z if op_type == 'z' else self.sigma_x
         
-        # Initialisation avec le qubit 0
+        # Initialisation with qubit 0
         res = base_op if i == 0 else self.identity
         
-        # Produit tensoriel avec tous les qubits suivants
+        # Tensor product with following qubits 
         for j in range(1, n):
             current_op = base_op if j == i else self.identity
             res = np.kron(res, current_op)
@@ -75,12 +75,12 @@ class DwaveSimulator:
 
         historique_valeurs_propres = []
 
-        # Boucle sur le temps s
+        # loop ower time s
         for s in range(len(self.A)):
             # H(s) = A(s)H_init + B(s)H_final
             H_s = self.A[s] * Hinit + self.B[s] * Hfinal
             
-            # Diagonalisation avec scipy
+            # Diagonalisation with scipy
             val_propres = eigh(H_s, eigvals_only=True, subset_by_index=[0, nb_eigenvalues - 1])
             historique_valeurs_propres.append(val_propres)
 
