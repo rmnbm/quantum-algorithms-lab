@@ -1,69 +1,96 @@
+from __future__ import annotations
+
+"""Branch-and-bound baseline for 0/1 knapsack instances."""
+
+
 class BranchAndBound:
-    def __init__(self, items, valeurs, poids):
-        self.items = items
-        self.valeurs = valeurs
-        self.poids = poids
-        self.nb_objets = len(valeurs)
-        self.objets_tries = self.trier_items()
-        
+    """Solve 0/1 knapsack instances with branch and bound."""
+
+    def __init__(self, items, values, weights):
+        if len(items) != len(values) or len(values) != len(weights):
+            raise ValueError("items, values, and weights must have the same length.")
+
+        self.items = list(items)
+        self.values = list(values)
+        self.weights = list(weights)
+        self.item_count = len(values)
+        self.sorted_items = self._sort_items()
+
+    def _sort_items(self):
+        ranked = []
+        for index, (item, value, weight) in enumerate(zip(self.items, self.values, self.weights)):
+            ratio = float("inf") if weight == 0 else value / weight
+            ranked.append(
+                {
+                    "index": index,
+                    "item": item,
+                    "weight": weight,
+                    "value": value,
+                    "ratio": ratio,
+                }
+            )
+        return sorted(ranked, key=lambda entry: entry["ratio"], reverse=True)
+
+    def calculate_upper_bound(self, index, remaining_capacity, current_value):
+        bound = current_value
+        available = remaining_capacity
+        cursor = index
+
+        while cursor < self.item_count and self.sorted_items[cursor]["weight"] <= available:
+            available -= self.sorted_items[cursor]["weight"]
+            bound += self.sorted_items[cursor]["value"]
+            cursor += 1
+
+        if cursor < self.item_count:
+            bound += available * self.sorted_items[cursor]["ratio"]
+
+        return bound
+
+    def _explore(self, index, remaining_capacity, current_value, current_selection):
+        if index == self.item_count:
+            if current_value > self.best_value:
+                self.best_value = current_value
+                self.best_selection = list(current_selection)
+            return
+
+        if self.calculate_upper_bound(index, remaining_capacity, current_value) <= self.best_value:
+            return
+
+        item = self.sorted_items[index]
+        if item["weight"] <= remaining_capacity:
+            current_selection[index] = 1
+            self._explore(
+                index + 1,
+                remaining_capacity - item["weight"],
+                current_value + item["value"],
+                current_selection,
+            )
+
+        current_selection[index] = 0
+        self._explore(index + 1, remaining_capacity, current_value, current_selection)
+
+    def solve(self, capacity):
+        self.best_value = 0
+        self.best_selection = [0] * self.item_count
+        self._explore(0, capacity, 0, [0] * self.item_count)
+
+        original_order_selection = [0] * self.item_count
+        for sorted_index, bit in enumerate(self.best_selection):
+            if bit:
+                original_index = self.sorted_items[sorted_index]["index"]
+                original_order_selection[original_index] = 1
+
+        return original_order_selection, self.best_value
+
+    # Legacy compatibility wrappers kept for the original course notebooks.
+    def resoudre(self, poids_max):
+        return self.solve(poids_max)
+
     def trier_items(self):
-        # Tri par ratio pour opti la borne
-        ratio_decroissant = []
-        for i in range(self.nb_objets):
-            v, p = self.valeurs[i], self.poids[i]
-            ratio_decroissant.append({'index': i, 'items': self.items[i], 'poids': p, 'valeur': v, 'ratio': v / p})
-        return sorted(ratio_decroissant, key=lambda x: x['ratio'], reverse=True)
-        
+        return self._sort_items()
+
     def calculer_borne_sup(self, index, poids_restant, valeur_actuelle):
-        borne = valeur_actuelle
-        poids_dispo = poids_restant
-        j = index
-
-        while j < self.nb_objets and self.objets_tries[j]['poids'] <= poids_dispo:
-            poids_dispo -= self.objets_tries[j]['poids']
-            borne += self.objets_tries[j]['valeur']
-            j += 1
-
-        if j < self.nb_objets:
-            borne += poids_dispo * self.objets_tries[j]['ratio']
-
-        return borne
+        return self.calculate_upper_bound(index, poids_restant, valeur_actuelle)
 
     def explorer(self, index, poids_restant, valeur_actuelle, selection_actuelle):
-        if index == self.nb_objets:
-            if valeur_actuelle > self.meilleure_valeur:
-                self.meilleure_valeur = valeur_actuelle
-                self.meilleure_selection = list(selection_actuelle)
-            return
-
-        if self.calculer_borne_sup(index, poids_restant, valeur_actuelle) <= self.meilleure_valeur:
-            return
-
-        objet = self.objets_tries[index]
-
-        # Branche 1: on prend
-        if objet['poids'] <= poids_restant:
-            selection_actuelle[index] = 1
-            self.explorer(index + 1, poids_restant - objet['poids'], valeur_actuelle + objet['valeur'], selection_actuelle)
-            
-        # Branche 2: on skip
-        selection_actuelle[index] = 0
-        self.explorer(index + 1, poids_restant, valeur_actuelle, selection_actuelle)
-
-
-    def resoudre(self, poids_max):
-        self.meilleure_valeur = 0
-        self.meilleure_selection = [0] * self.nb_objets
-        
-        self.explorer(0, poids_max, 0, [0] * self.nb_objets)
-        
-        # Remap des index
-        selection_finale = [0] * self.nb_objets
-        for i, bit in enumerate(self.meilleure_selection):
-            if bit == 1:
-                selection_finale[self.objets_tries[i]['index']] = 1
-                
-        return selection_finale, self.meilleure_valeur
-    
-    def solve(self, capacity):
-        return self.resoudre(capacity)
+        return self._explore(index, poids_restant, valeur_actuelle, selection_actuelle)

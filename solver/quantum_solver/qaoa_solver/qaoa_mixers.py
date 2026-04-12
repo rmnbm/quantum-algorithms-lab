@@ -1,47 +1,54 @@
-from qiskit import QuantumCircuit
-from qiskit.circuit import Parameter
+from __future__ import annotations
 
-def add_ising_mixer_ham(qc, ising_problem, n):
-    layer_id = len(qc.parameters)
-    beta = Parameter(f'β_{layer_id}')
+import sympy as sp
+from qiskit.circuit import Parameter, QuantumCircuit
 
+
+def _coerce_expression(problem):
+    if hasattr(problem, "to_sympy_expr"):
+        return sp.expand(problem.to_sympy_expr())
+    return sp.expand(sp.sympify(problem))
+
+
+def add_ising_mixer_ham(qc: QuantumCircuit, ising_problem, n: int, layer_index: int | None = None):
+    """Append the standard X mixer Hamiltonian layer."""
+
+    layer_id = len(qc.parameters) if layer_index is None else layer_index
+    beta = Parameter(f"beta_{layer_id}")
     for qubit in range(n):
         qc.rx(2 * beta, qubit)
-    
     return qc, [beta]
 
 
+def add_ising_problem_ham(qc: QuantumCircuit, ising_problem, n: int, layer_index: int | None = None):
+    """Append the Ising cost Hamiltonian e^(-i gamma H_C) to a circuit."""
 
+    expression = _coerce_expression(ising_problem)
+    layer_id = len(qc.parameters) if layer_index is None else layer_index
+    gamma = Parameter(f"gamma_{layer_id}")
 
+    variables = sorted(expression.free_symbols, key=str)
+    if len(variables) != n:
+        raise ValueError("The number of qubits must match the number of Ising variables.")
 
+    var_to_qubit = {var: index for index, var in enumerate(variables)}
 
-def add_ising_problem_ham(qc, ising_problem, n):
-    layer_id = len(qc.parameters)
-    gamma = Parameter(f'γ_{layer_id}')
-    
-    variables = sorted(list(ising_problem.free_symbols), key=lambda x: str(x))
-    var_to_qubit = {var: idx for idx, var in enumerate(variables)}
-    
-    #We get the coefficients directly from the math expression
-    coeff_dict = ising_problem.as_coefficients_dict()
-
-    for term, coeff in coeff_dict.items():
+    for term, coeff in expression.as_coefficients_dict().items():
         coeff = float(coeff)
-        if term == 1: continue # Skip empty terms
-            
-        free_syms = list(term.free_symbols)
-        
-        #We apply the Rz rotations for single variables
-        if len(free_syms) == 1:
-            qubit_idx = var_to_qubit[free_syms[0]]
-            qc.rz(2 * coeff * gamma, qubit_idx)
-            
-        #We apply CNOT-Rz-CNOT for interactions between two variables
-        elif len(free_syms) == 2:
-            qubit_1 = var_to_qubit[free_syms[0]]
-            qubit_2 = var_to_qubit[free_syms[1]]
-            qc.cx(qubit_1, qubit_2)
-            qc.rz(2 * coeff * gamma, qubit_2)
-            qc.cx(qubit_1, qubit_2)
-            
+        if term == 1:
+            continue
+
+        free_symbols = list(term.free_symbols)
+        if len(free_symbols) == 1:
+            qubit_index = var_to_qubit[free_symbols[0]]
+            qc.rz(2 * coeff * gamma, qubit_index)
+        elif len(free_symbols) == 2:
+            first = var_to_qubit[free_symbols[0]]
+            second = var_to_qubit[free_symbols[1]]
+            qc.cx(first, second)
+            qc.rz(2 * coeff * gamma, second)
+            qc.cx(first, second)
+        else:
+            raise ValueError("Only linear and quadratic Ising terms are supported.")
+
     return qc, [gamma]

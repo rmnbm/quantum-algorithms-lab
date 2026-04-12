@@ -1,60 +1,66 @@
-import os
-import sys
 import numpy as np
-from itertools import product
 
-# Fix imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+from problem.ising_problem import IsingProblem
+from problem.qubo_problem import QuboProblem
 from solver.classical_solver.branch_and_bound import BranchAndBound
-from solver.classical_solver.converter import knapsack_to_qubo
+from solver.classical_solver.converter import ising_to_qubo, knapsack_to_qubo, qubo_to_ising
 
-def solve_qubo_exhaustively(Q):
-    size = Q.shape[0]
-    best_cost = float('inf')
-    best_state = None
-    
-    # On teste les 2^size combinaisons possibles
-    for x in product([0, 1], repeat=size):
-        x_vec = np.array(x)
-        current_cost = x_vec.T @ Q @ x_vec
-        
-        if current_cost < best_cost:
-            best_cost = current_cost
-            best_state = x_vec
-            
-    return best_state, best_cost
 
-def test_qubo_conversion_equivalence():
-    # Instance simple de Knapsack
+def test_knapsack_to_qubo_preserves_optimum():
     items = ["A", "B", "C"]
     values = [10, 15, 20]
     weights = [1, 2, 3]
     capacity = 3
-    
-    # Solution via Branch & Bound 
-    bb = BranchAndBound(items, values, weights)
-    bb_selection, bb_value = bb.solve(capacity)
-    print(f"B&B Optimal Value: {bb_value}")
 
-    # 3. Conversion en QUBO 
-    Q = knapsack_to_qubo(values, weights, capacity, penalty_factor=50)
-    qubo_state, qubo_energy = solve_qubo_exhaustively(Q)
-    
-    # On ne garde que les n_items premiers bits 
-    qubo_selection = list(qubo_state[:len(items)])
-    
-    # Calcul de la valeur réelle des objets sélectionnés par le QUBO
-    qubo_real_value = sum(qubo_selection[i] * values[i] for i in range(len(items)))
-    qubo_real_weight = sum(qubo_selection[i] * weights[i] for i in range(len(items)))
+    solver = BranchAndBound(items, values, weights)
+    bb_selection, bb_value = solver.solve(capacity)
 
-    print(f"QUBO Selection: {qubo_selection} (Value: {qubo_real_value}, Weight: {qubo_real_weight})")
+    qubo_matrix = knapsack_to_qubo(values, weights, capacity, penalty_factor=50)
+    qubo = QuboProblem(qubo_matrix)
 
-    # 5. Vérifications
-    # La sélection doit être identique et le poids respecté
-    assert qubo_real_value == bb_value, "Le QUBO n'a pas trouvé la même valeur optimale que le B&B"
-    assert qubo_real_weight <= capacity, "La solution QUBO dépasse la capacité autorisée"
-    print("Test de conversion réussi : L'optimum est préservé.")
+    best_solution = None
+    best_energy = None
+    for solution in qubo.generate_complete_search_space():
+        energy = qubo.eval(solution)
+        if best_energy is None or energy < best_energy:
+            best_solution = solution
+            best_energy = energy
 
-if __name__ == "__main__":
-    test_qubo_conversion_equivalence()
+    qubo_selection = [best_solution[f"x{i}"] for i in range(len(items))]
+    qubo_value = sum(bit * value for bit, value in zip(qubo_selection, values))
+    qubo_weight = sum(bit * weight for bit, weight in zip(qubo_selection, weights))
+
+    assert qubo_value == bb_value
+    assert qubo_weight <= capacity
+    assert qubo_selection == bb_selection
+
+
+def test_qubo_and_ising_roundtrip_preserves_energy():
+    qubo = QuboProblem(np.array([[3.0, -2.0], [0.0, 1.5]]))
+    ising = qubo_to_ising(qubo)
+    qubo_roundtrip = ising_to_qubo(ising)
+
+    converted_offsets = []
+    roundtrip_offsets = []
+    for qubo_solution in qubo.generate_complete_search_space():
+        x0 = qubo_solution["x0"]
+        x1 = qubo_solution["x1"]
+        ising_solution = {"s0": 1 - 2 * x0, "s1": 1 - 2 * x1}
+
+        original = qubo.eval(qubo_solution)
+        converted = ising.eval(ising_solution)
+        roundtrip = qubo_roundtrip.eval(qubo_solution)
+
+        converted_offsets.append(original - converted)
+        roundtrip_offsets.append(original - roundtrip)
+
+    assert np.allclose(converted_offsets, converted_offsets[0])
+    assert np.allclose(roundtrip_offsets, roundtrip_offsets[0])
+
+
+def test_ising_to_qubo_handles_symbolic_expression():
+    problem = IsingProblem(string="2*s0*s1 - s0 + 3*s1")
+    qubo = ising_to_qubo(problem)
+
+    assert qubo.matrix.shape == (2, 2)
+    assert np.isclose(qubo.matrix[0, 1], 8.0)

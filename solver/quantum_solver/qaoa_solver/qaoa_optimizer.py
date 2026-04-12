@@ -1,66 +1,79 @@
+from __future__ import annotations
+
 import numpy as np
-from scipy.optimize import minimize
+import sympy as sp
 from qiskit import QuantumCircuit
+from scipy.optimize import minimize
+
 from solver.quantum_solver.qaoa_solver.qaoa_mixers import add_ising_mixer_ham, add_ising_problem_ham
 
+
+def _coerce_expression(problem):
+    if hasattr(problem, "to_sympy_expr"):
+        return sp.expand(problem.to_sympy_expr())
+    return sp.expand(sp.sympify(problem))
+
+
 class QAOALocalOptimizer:
+    """Optimize QAOA angles for a quadratic Ising cost Hamiltonian."""
+
     def __init__(self, simulator, gamma_bounds, beta_bounds, p, shots, opt_method):
         self.simulator = simulator
         self.gamma_bounds = gamma_bounds
         self.beta_bounds = beta_bounds
-        self.p = p # Number of layers
+        self.p = p
         self.shots = shots
-        self.opt_method = opt_method # The math method used to find the best angles 
+        self.opt_method = opt_method
 
-    def _run_circuit(self, angles, qc): 
-        parameters = {param: [val] for param, val in zip(qc.parameters, angles)}
-        
-        #We run the circuit on the simulator
-        job = self.simulator.run(qc, parameter_binds=[parameters], shots=self.shots)
-        
-        return job.result().get_counts()[0]
-    
+    def _build_parametrized_circuit(self, problem, p):
+        expression = _coerce_expression(problem)
+        variables = sorted(expression.free_symbols, key=str)
+        circuit = QuantumCircuit(len(variables))
+        circuit.h(range(len(variables)))
 
-    #We created the QAOALocalOptimizer class to automate the search for optimal gamma and beta angles. 
-    # The class stores our hardware settings (simulator and shots) and the mathematical rules for the search. 
-    # We added a private method _run_circuit which acts as a bridge : it takes a list of trial angles, plugs 
-    # them into our quantum circuit, and returns the measurement results from the simulator.
+        parameter_order = []
+        for layer in range(p):
+            circuit, gamma_params = add_ising_problem_ham(circuit, expression, len(variables), layer_index=layer)
+            circuit, beta_params = add_ising_mixer_ham(circuit, expression, len(variables), layer_index=layer)
+            parameter_order.extend(gamma_params + beta_params)
 
+        measured_circuit = circuit.copy()
+        measured_circuit.measure_all()
+        return expression, variables, measured_circuit, parameter_order
 
+    def _run_circuit(self, angles, qc, parameter_order):
+        bindings = {param: value for param, value in zip(parameter_order, angles)}
+        bound_circuit = qc.assign_parameters(bindings)
+        job = self.simulator.run(bound_circuit, shots=self.shots)
+        return job.result().get_counts()
 
-    def get_expectation_value(self, angles, qc, problem):
-        #We run the circuit to get bitstring counts 
-        counts = self._run_circuit(angles, qc)
-        total_cost = 0
-        
-        #Mapping bitstrings to +1/-1 and calculate cost
+    def get_expectation_value(self, angles, qc, parameter_order, problem, variables):
+        counts = self._run_circuit(angles, qc, parameter_order)
+        total_cost = 0.0
+
         for bitstring, count in counts.items():
-            # We map '0' -> 1 and '1' -> -1
-            spins = {f's{i+1}': (1 if b == '0' else -1) for i, b in enumerate(reversed(bitstring))}
-            
-            #We calculate cost 
-            cost = float(problem.subs(spins))
-            total_cost += cost * count
-            
+            spins = {
+                variable: (1 if bit == "0" else -1)
+                for variable, bit in zip(variables, reversed(bitstring))
+            }
+            total_cost += float(problem.subs(spins)) * count
+
         return total_cost / self.shots
 
-    def optimize(self, problem, p):
-        #We build the full p-layer circuit
-        n = len(problem.free_symbols)
-        qc = QuantumCircuit(n)
-        for i in range(n): qc.h(i) #Uniform superposition
-        
-        for _ in range(p):
-            add_ising_problem_ham(qc, problem, n)
-            add_ising_mixer_ham(qc, problem, n)
-            
-        #We define the objective function for the optimizer
-        def objective(angles):
-            return self.get_expectation_value(angles, qc, problem)
+    def optimize(self, problem, p=None):
+        depth = self.p if p is None else p
+        expression, variables, measured_circuit, parameter_order = self._build_parametrized_circuit(problem, depth)
 
-        #We run the automated search (minimize the cost) 
-        init_angles = np.random.uniform(0, np.pi, 2 * p)
-        res = minimize(objective, init_angles, method=self.opt_method)
-        
-        # Return results: best cost, best angles 
-        return res.fun, res.x
+        def objective(angles):
+            return self.get_expectation_value(angles, measured_circuit, parameter_order, expression, variables)
+
+        bounds = []
+        initial_angles = []
+        for _ in range(depth):
+            bounds.append(self.gamma_bounds)
+            initial_angles.append(np.random.uniform(*self.gamma_bounds))
+            bounds.append(self.beta_bounds)
+            initial_angles.append(np.random.uniform(*self.beta_bounds))
+        initial_angles = np.array(initial_angles, dtype=float)
+        result = minimize(objective, initial_angles, method=self.opt_method, bounds=bounds if self.opt_method != "COBYLA" else None)
+        return float(result.fun), result.x

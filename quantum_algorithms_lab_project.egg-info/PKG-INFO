@@ -1,3 +1,20 @@
+Metadata-Version: 2.4
+Name: quantum-algorithms-lab-project
+Version: 0.1.0
+Summary: Reusable optimization and quantum lab tooling built from the ESILV quantum algorithms sessions.
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: sympy
+Requires-Dist: networkx
+Requires-Dist: matplotlib
+Requires-Dist: pandas
+Requires-Dist: qiskit
+Requires-Dist: qiskit-aer
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+
 # Quantum Algorithms Lab Project
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)

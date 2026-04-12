@@ -1,19 +1,25 @@
+from __future__ import annotations
+
 import pickle
-import os
+from pathlib import Path
+
 
 def save_instances(instances, filename="instances_pool.pkl"):
-    
-    with open(filename, 'wb') as f:
-        pickle.dump(instances, f)
-    print(f"Pool de {len(instances)} instances sauvegardé dans {filename}")
+    """Persist a pool of benchmark instances to disk."""
+
+    path = Path(filename)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as handle:
+        pickle.dump(instances, handle)
+    return path
+
 
 def load_instances(filename="instances_pool.pkl"):
-    
-    if os.path.exists(filename):
-        with open(filename, 'rb') as f:
-            instances = pickle.load(f)
-        print(f"Chargement de {len(instances)} instances réussi.")
-        return instances
-    else:
-        print("Erreur : Fichier de sauvegarde introuvable.")
-        return None
+    """Load a pool of benchmark instances from disk."""
+
+    path = Path(filename)
+    if not path.exists():
+        raise FileNotFoundError(f"Instance file not found: {path}")
+
+    with path.open("rb") as handle:
+        return pickle.load(handle)

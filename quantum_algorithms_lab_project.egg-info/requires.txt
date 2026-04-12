@@ -1,0 +1,11 @@
+numpy
+scipy
+sympy
+networkx
+matplotlib
+pandas
+qiskit
+qiskit-aer
+
+[dev]
+pytest

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantum-algorithms-lab-project"
+version = "0.1.0"
+description = "Reusable optimization and quantum lab tooling built from the ESILV quantum algorithms sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "sympy",
+    "networkx",
+    "matplotlib",
+    "pandas",
+    "qiskit",
+    "qiskit-aer",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["problem*", "solver*"]
+exclude = ["notebooks*", "data*", "tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

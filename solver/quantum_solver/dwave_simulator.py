@@ -1,129 +1,113 @@
+from __future__ import annotations
+
+import matplotlib.pyplot as plt
 import numpy as np
 import sympy as sp
 from scipy.linalg import eigh
-import matplotlib.pyplot as plt
+
+
+def _coerce_expression(problem):
+    if hasattr(problem, "to_sympy_expr"):
+        return sp.expand(problem.to_sympy_expr())
+    return sp.expand(sp.sympify(problem))
+
 
 class DwaveSimulator:
+    """Toy simulator for adiabatic evolution on an Ising Hamiltonian."""
+
     def __init__(self):
-
         self.annealing_schedule = {
-            'A': np.linspace(1.0, 0.0, 101),
-            'B': np.linspace(0.0, 1.0, 101)
+            "A": np.linspace(1.0, 0.0, 101),
+            "B": np.linspace(0.0, 1.0, 101),
         }
-        
-        # TODO1
-        self.A = np.linspace(1.0, 0.0, 101)
-        self.B = np.linspace(0.0, 1.0, 101)
-
-        # Pauli Matrix
-        self.sigma_z = np.array([[1, 0], [0, -1]])
-        self.sigma_x = np.array([[0, 1], [1, 0]])
+        self.A = self.annealing_schedule["A"]
+        self.B = self.annealing_schedule["B"]
+        self.sigma_z = np.array([[1.0, 0.0], [0.0, -1.0]])
+        self.sigma_x = np.array([[0.0, 1.0], [1.0, 0.0]])
         self.identity = np.eye(2)
 
-    def sigma_i(self, n, i, op_type='z'):
-        
-        base_op = self.sigma_z if op_type == 'z' else self.sigma_x
-        
-        # Initialisation with qubit 0
-        res = base_op if i == 0 else self.identity
-        
-        # Tensor product with following qubits 
-        for j in range(1, n):
-            current_op = base_op if j == i else self.identity
-            res = np.kron(res, current_op)
-            
-        return res
+    def sigma_i(self, qubit_count, target_qubit, op_type="z"):
+        base_op = self.sigma_z if op_type == "z" else self.sigma_x
+        result = base_op if target_qubit == 0 else self.identity
+        for qubit in range(1, qubit_count):
+            current = base_op if qubit == target_qubit else self.identity
+            result = np.kron(result, current)
+        return result
 
-    def build_Hfinal(self, ising_problem, n):
-        # TODO2
-        
-        dim = 2**n
-        Hfinal = np.zeros((dim, dim))
-        
-        dictionnaire_termes = ising_problem.as_coefficients_dict()
+    def build_Hfinal(self, ising_problem, qubit_count=None):
+        expression = _coerce_expression(ising_problem)
+        variables = sorted(expression.free_symbols, key=str)
+        qubit_count = len(variables) if qubit_count is None else qubit_count
+        var_to_index = {var: index for index, var in enumerate(variables)}
 
-        for terme, poids in dictionnaire_termes.items():
-            
-            spins_presents = list(terme.atoms(sp.Symbol))
-            indices = [int(str(s).replace('s', '')) for s in spins_presents]
+        h_final = np.zeros((2**qubit_count, 2**qubit_count))
+        for term, coeff in expression.as_coefficients_dict().items():
+            coeff = float(coeff)
+            if term == 1:
+                h_final += coeff * np.eye(2**qubit_count)
+                continue
 
-            if len(indices) == 1: 
-                i = indices[0]
-                Hfinal += float(poids) * self.sigma_i(n, i, 'z')
-                
-            elif len(indices) == 2: 
-                i, j = indices[0], indices[1]
-                op_i = self.sigma_i(n, i, 'z')
-                op_j = self.sigma_i(n, j, 'z')
-                Hfinal += float(poids) * (op_i @ op_j)
-                
-        return Hfinal
+            symbols = list(term.free_symbols)
+            if len(symbols) == 1:
+                index = var_to_index[symbols[0]]
+                h_final += coeff * self.sigma_i(qubit_count, index, "z")
+            elif len(symbols) == 2:
+                i = var_to_index[symbols[0]]
+                j = var_to_index[symbols[1]]
+                h_final += coeff * (self.sigma_i(qubit_count, i, "z") @ self.sigma_i(qubit_count, j, "z"))
+            else:
+                raise ValueError("Only linear and quadratic Ising terms are supported.")
 
-    def build_Hinit(self, n):
-        # TODO3
-        dim = 2**n
-        Hinit = np.zeros((dim, dim))
-        
-        for i in range(n):
-            Hinit += self.sigma_i(n, i, 'x')
-            
-        return Hinit
+        return h_final
+
+    def build_Hinit(self, qubit_count):
+        h_init = np.zeros((2**qubit_count, 2**qubit_count))
+        for qubit in range(qubit_count):
+            h_init += self.sigma_i(qubit_count, qubit, "x")
+        return h_init
 
     def simulate_evolution(self, ising_problem, nb_eigenvalues):
-        # TODO4
-        spins_presents = list(ising_problem.atoms(sp.Symbol))
-        indices = [int(str(s).replace('s', '')) for s in spins_presents]
-        n = max(indices) + 1 if indices else 0
+        expression = _coerce_expression(ising_problem)
+        variables = sorted(expression.free_symbols, key=str)
+        qubit_count = len(variables)
 
-        Hfinal = self.build_Hfinal(ising_problem, n)
-        Hinit = self.build_Hinit(n)
+        h_final = self.build_Hfinal(expression, qubit_count)
+        h_init = self.build_Hinit(qubit_count)
+        spectrum_history = []
 
-        historique_valeurs_propres = []
+        for index in range(len(self.A)):
+            h_s = self.A[index] * h_init + self.B[index] * h_final
+            eigenvalues = eigh(h_s, eigvals_only=True, subset_by_index=[0, nb_eigenvalues - 1])
+            spectrum_history.append(eigenvalues)
 
-        # loop ower time s
-        for s in range(len(self.A)):
-            # H(s) = A(s)H_init + B(s)H_final
-            H_s = self.A[s] * Hinit + self.B[s] * Hfinal
-            
-            # Diagonalisation with scipy
-            val_propres = eigh(H_s, eigvals_only=True, subset_by_index=[0, nb_eigenvalues - 1])
-            historique_valeurs_propres.append(val_propres)
+        return spectrum_history
 
-        return historique_valeurs_propres
+    def plot_eigenvalues(self, spectrum_history):
+        values = np.array(spectrum_history)
+        figure, axis = plt.subplots(figsize=(8, 5))
+        for index in range(values.shape[1]):
+            axis.plot(values[:, index], label=f"Eigenvalue {index}")
+        axis.set_title("Evolution of the lowest eigenvalues")
+        axis.set_xlabel("Annealing step")
+        axis.set_ylabel("Energy")
+        axis.grid(True, linestyle=":", alpha=0.6)
+        axis.legend()
+        return axis
 
-    def plot_eigenvalues(self, historique_valeurs_propres):
-        #TODO5
-        data = np.array(historique_valeurs_propres)
-            
-        for i in range(data.shape[1]):
-            plt.plot(data[:, i], label=f'Eigen {i}')
-                
-        plt.title('Evolution des énergies')
-        plt.xlabel('Temps de recuit (steps)')
-        plt.ylabel('Energie')
-        plt.legend()
-        plt.grid(True, linestyle=':', alpha=0.6)
-        plt.show()
+    def plot_spectral_gap(self, spectrum_history):
+        values = np.array(spectrum_history)
+        if values.shape[1] < 2:
+            raise ValueError("At least two eigenvalues are required to compute the spectral gap.")
 
-    def plot_spectral_gap(self, historique_valeurs_propres):
-        #TODO5
-        data = np.array(historique_valeurs_propres)
-        
-        if data.shape[1] < 2:
-            print("Besoin de 2 valeurs propres minimum.")
-            return
+        gap = values[:, 1] - values[:, 0]
+        minimum_index = int(np.argmin(gap))
 
-        gap = data[:, 1] - data[:, 0]
-        g_min = np.min(gap)
-        s_min = np.argmin(gap)
-
-        plt.plot(gap, label='Gap spectral')
-        plt.plot(s_min, g_min, 'ro')
-        
-        plt.title(f'Gap Spectral (Minimum = {g_min:.4f} au pas {s_min})')
-        plt.xlabel('Temps de recuit (steps)')
-        plt.ylabel('Différence d\'énergie')
-        plt.legend()
-        plt.grid(True, linestyle=':', alpha=0.6)
-        plt.show()
-        
+        figure, axis = plt.subplots(figsize=(8, 5))
+        axis.plot(gap, label="Spectral gap")
+        axis.scatter([minimum_index], [gap[minimum_index]], color="#e74c3c", label="Minimum gap")
+        axis.set_title("Spectral gap along the annealing schedule")
+        axis.set_xlabel("Annealing step")
+        axis.set_ylabel("Gap")
+        axis.grid(True, linestyle=":", alpha=0.6)
+        axis.legend()
+        return axis
