@@ -23,7 +23,6 @@ The maintained library code lives in `problem/`, `solver/`, `utils/`, and `tests
 - QUBO <-> Ising conversion utilities for classical and quantum workflows
 - Lightweight QAOA helpers built on top of Qiskit
 - Classical reference solvers for benchmarking and validation
-- A tested codebase suitable for a polished GitHub portfolio project
 
 ## Project Structure
 
